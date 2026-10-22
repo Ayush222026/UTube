@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Bhakti Dhara – Bhakti • Knowledge • Podcasts</title>
+  <meta name="description" content="Discover bhajans, spiritual teachings, educational videos and podcasts from YouTube.">
+  <meta name="theme-color" content="#c2540a">
+  <link rel="icon" href="assets/logo.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Mukta:wght@400;600;700&family=Yatra+One&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="topbar">
+    <button id="menuBtn" class="icon-btn" aria-label="Open or close menu">☰</button>
+    <a class="brand" id="brand" href="./">
+      <img src="assets/logo.svg" alt="" width="38" height="38">
+      <span class="brand-text"><strong>Bhakti Dhara</strong><small>Bhakti • Knowledge • Podcasts</small></span>
+    </a>
+    <form id="searchForm" class="search" role="search">
+      <input id="searchInput" type="search" placeholder="Search bhajans, Gita, podcasts…" aria-label="Search YouTube videos" autocomplete="off">
+      <button type="submit">Search</button>
+    </form>
+    <button id="themeBtn" class="icon-btn" aria-label="Switch theme">🌙</button>
+  </header>
+
+  <div class="layout">
+    <aside class="sidebar" id="sidebar">
+      <nav aria-label="Main">
+        <button class="nav-item active" data-view="home">🏠 Home</button>
+        <button class="nav-item" data-view="saved">🔖 Watchlist</button>
+        <button class="nav-item" data-view="recent">🕘 Recently watched</button>
+      </nav>
+      <div class="side-foot">
+        <button id="clearBtn" class="link-btn">Clear saved data</button>
+        <p>Your watchlist and history are stored only in this browser, on this device. There are no accounts.</p>
+      </div>
+    </aside>
+    <div class="overlay" id="overlay"></div>
+
+    <main>
+      <section id="feedView">
+        <div class="chips" id="chips" role="group" aria-label="Categories"></div>
+        <h1 id="feedTitle" class="feed-title"></h1>
+        <div id="grid" class="grid"></div>
+        <div id="status" class="status" hidden></div>
+        <div class="more"><button id="loadMore" class="btn" hidden>Load more</button></div>
+        <div id="sentinel" aria-hidden="true"></div>
+      </section>
+
+      <section id="watchView" hidden>
+        <button id="backBtn" class="btn ghost">← Back to videos</button>
+        <div class="player-wrap"><div id="player"></div></div>
+        <div id="playerMsg" class="status" hidden></div>
+        <h1 id="watchTitle" class="watch-title"></h1>
+        <p id="watchMeta" class="muted"></p>
+        <div class="actions">
+          <button id="saveBtn" class="btn">Save to watchlist</button>
+          <button id="shareBtn" class="btn ghost">Share</button>
+          <a id="ytLink" class="btn ghost" target="_blank" rel="noopener noreferrer">Watch on YouTube</a>
+        </div>
+        <h2 class="related-title">Related videos</h2>
+        <div id="relatedGrid" class="grid"></div>
+        <div id="relatedStatus" class="status" hidden></div>
+      </section>
+
+      <footer class="footer">
+        Videos are provided by YouTube and play in YouTube's embedded player. Bhakti Dhara is not affiliated with YouTube. Results are search results, not a curated or exclusively devotional list.
+      </footer>
+    </main>
+  </div>
+
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  <script src="script.js"></script>
+</body>
+</html>
