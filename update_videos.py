@@ -92,6 +92,19 @@ def resolve_channel_id(url):
                      "Put the channel ID (UC...) in channels.txt instead of the link.")
 
 
+def fetch_feed(cid):
+    """Reads the channel's public feed, retrying with a browser-like identity if refused."""
+    url = f"https://www.youtube.com/feeds/videos.xml?channel_id={cid}"
+    last = None
+    for ua in (UA, BROWSER_UA):
+        try:
+            return fetch(url, ua=ua)
+        except Exception as err:
+            last = err
+            time.sleep(1)
+    raise last
+
+
 def parse_feed(xml_text):
     root = ET.fromstring(xml_text)
     videos = []
@@ -138,7 +151,7 @@ def main():
         try:
             cid = channel_ids.get(url) or resolve_channel_id(url)
             channel_ids[url] = cid
-            feed = fetch(f"https://www.youtube.com/feeds/videos.xml?channel_id={cid}")
+            feed = fetch_feed(cid)
             entries = parse_feed(feed)
         except Exception as err:  # one bad channel must not stop the others
             failures += 1
