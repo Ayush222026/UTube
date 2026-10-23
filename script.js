@@ -1,36 +1,49 @@
-/* Bhakti Dhara – plain JavaScript, no build step.
-   Sections: 1 Config · 2 Helpers · 3 YouTube API · 4 Feed · 5 Watch page · 6 Local data · 7 UI wiring */
+/* Bhakti Dhara – NO API KEY version. Plain JavaScript, no build step.
+   Videos come from two places:
+   1. LINKS below (links you paste by hand), shown first.
+   2. videos.json, filled automatically every 4 hours from the channels in channels.txt. */
 
-/* ============ 1. CONFIG ============ */
-const CONFIG = {
-  // Paste your YouTube Data API v3 key between the quotes.
-  // IMPORTANT: on a static website this key is visible to every visitor.
-  // Restrict it in Google Cloud (website + YouTube Data API v3 only). See README.
-  YOUTUBE_API_KEY: "PASTE_YOUR_API_KEY_HERE",
-  PAGE_SIZE: 12,
+/* ============ 1. YOUR OWN LINKS (optional, edit this part) ============
+   Paste normal YouTube links inside the quotes, one per line.
+   Works with: youtu.be/... links, youtube.com/watch?v=... links, and playlist links
+   (youtube.com/playlist?list=...). Playlist links play the whole playlist inside the site.
+   Category names on the left must stay exactly as they are. */
+const LINKS = {
+  all: [],
+  bhajans: [],
+  hindu: [],
+  gita: [],
+  epics: [],
+  hanuman: [
+    "https://youtu.be/Ds6nlDvNHss",
+    "https://youtu.be/xJ3vatsNQDU",
+  ],
+  mahadev: [],
+  krishna: [],
+  yoga: [],
+  "spiritual-edu": [],
+  edu: [],
+  podcast: [],
 };
 
-const API_BASE = "https://www.googleapis.com/youtube/v3";
-
 const CATEGORIES = [
-  { id: "all", label: "All Videos", q: "bhakti spirituality knowledge podcast" },
-  { id: "bhajans", label: "Bhakti & Bhajans", q: "bhakti bhajan kirtan" },
-  { id: "hindu", label: "Hindu Spirituality", q: "Hindu spirituality Sanatan Dharma philosophy" },
-  { id: "gita", label: "Bhagavad Gita", q: "Bhagavad Gita explained" },
-  { id: "epics", label: "Ramayana & Mahabharata", q: "Ramayana Mahabharata story" },
-  { id: "hanuman", label: "Hanuman Ji", q: "Hanuman Ji bhajan Hanuman Chalisa" },
-  { id: "mahadev", label: "Mahadev", q: "Mahadev Shiv bhajan Shiva" },
-  { id: "krishna", label: "Shri Krishna", q: "Shri Krishna bhajan Krishna leela" },
-  { id: "yoga", label: "Meditation & Yoga", q: "meditation yoga pranayama" },
-  { id: "spiritual-edu", label: "Spiritual Education", q: "Vedanta Upanishad spiritual discourse" },
-  { id: "edu", label: "General Education", q: "educational lecture explained" },
-  { id: "podcast", label: "Podcasts & Interviews", q: "spiritual podcast interview" },
+  { id: "all", label: "All Videos" },
+  { id: "bhajans", label: "Bhakti & Bhajans" },
+  { id: "hindu", label: "Hindu Spirituality" },
+  { id: "gita", label: "Bhagavad Gita" },
+  { id: "epics", label: "Ramayana & Mahabharata" },
+  { id: "hanuman", label: "Hanuman Ji" },
+  { id: "mahadev", label: "Mahadev" },
+  { id: "krishna", label: "Shri Krishna" },
+  { id: "yoga", label: "Meditation & Yoga" },
+  { id: "spiritual-edu", label: "Spiritual Education" },
+  { id: "edu", label: "General Education" },
+  { id: "podcast", label: "Podcasts & Interviews" },
 ];
 
 /* ============ 2. HELPERS ============ */
 const $ = (sel) => document.querySelector(sel);
 
-// Tiny element builder. Text is added with append(), so titles can never inject HTML.
 function h(tag, props = {}, ...kids) {
   const el = document.createElement(tag);
   for (const [k, v] of Object.entries(props)) {
@@ -42,7 +55,7 @@ function h(tag, props = {}, ...kids) {
   return el;
 }
 
-// localStorage wrapper: only theme + video IDs are stored, never anything personal.
+// Only the theme and video IDs are stored, in this browser only.
 const KEYS = { theme: "bd_theme", saved: "bd_saved", recent: "bd_recent" };
 const store = {
   get(key, fallback) {
@@ -53,24 +66,6 @@ const store = {
   remove(key) { try { localStorage.removeItem(key); } catch { /* ignore */ } },
 };
 
-function fmtViews(n) {
-  return n == null ? "" : new Intl.NumberFormat("en", { notation: "compact" }).format(n) + " views";
-}
-function fmtAgo(iso) {
-  const s = (Date.now() - new Date(iso).getTime()) / 1000;
-  const units = [["year", 31536000], ["month", 2592000], ["week", 604800], ["day", 86400], ["hour", 3600], ["minute", 60]];
-  for (const [name, secs] of units) {
-    if (s >= secs) { const n = Math.floor(s / secs); return `${n} ${name}${n > 1 ? "s" : ""} ago`; }
-  }
-  return "just now";
-}
-function fmtDuration(iso) {
-  const m = /^PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?$/.exec(iso || "");
-  if (!m) return "";
-  const hrs = +m[1] || 0, min = +m[2] || 0, sec = String(+m[3] || 0).padStart(2, "0");
-  return hrs ? `${hrs}:${String(min).padStart(2, "0")}:${sec}` : `${min}:${sec}`;
-}
-
 let toastTimer;
 function toast(msg) {
   const el = $("#toast");
@@ -79,7 +74,6 @@ function toast(msg) {
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => el.classList.remove("show"), 2400);
 }
-
 function setStatus(el, title, text, button) {
   el.replaceChildren(h("strong", {}, title), h("p", {}, text || ""), button);
   el.hidden = false;
@@ -95,92 +89,88 @@ function addSkeletons(container, n) {
 }
 function removeSkeletons(container) { container.querySelectorAll(".skeleton").forEach((s) => s.remove()); }
 
-/* ============ 3. YOUTUBE API ============ */
-const hasKey = () => !!CONFIG.YOUTUBE_API_KEY && !CONFIG.YOUTUBE_API_KEY.startsWith("PASTE");
-const videoCache = new Map(); // id -> normalized video
-
-function friendlyError(status, reason) {
-  if (reason === "quotaExceeded" || reason === "dailyLimitExceeded" || reason === "rateLimitExceeded")
-    return "This site has used up its free YouTube quota for today. It resets daily, so please try again tomorrow.";
-  if (status === 400) return "The YouTube API key looks invalid. Check the key in script.js.";
-  if (reason === "accessNotConfigured") return "YouTube Data API v3 is not enabled for this API key's Google Cloud project.";
-  if (status === 403) return "YouTube refused the request. If the key is restricted, make sure this website's address is allowed in the key's website restrictions.";
-  return `YouTube returned an error (code ${status}). Please try again in a moment.`;
+/* ============ 3. LINKS -> ITEMS ============ */
+function parseLink(raw) {
+  const s = String(raw).trim();
+  const vid = /(?:v=|youtu\.be\/|shorts\/|embed\/|live\/)([\w-]{11})/.exec(s);
+  if (vid) return { type: "video", id: vid[1] };
+  const list = /[?&]list=([\w-]+)/.exec(s);
+  if (list) return { type: "playlist", id: list[1] };
+  return null;
 }
 
-async function api(endpoint, params) {
-  const url = new URL(`${API_BASE}/${endpoint}`);
-  for (const [k, v] of Object.entries({ ...params, key: CONFIG.YOUTUBE_API_KEY })) url.searchParams.set(k, v);
-  let res;
-  try { res = await fetch(url); }
-  catch { throw new Error("Network problem. Check your internet connection and try again."); }
-  if (res.ok) return res.json();
-  let reason = "";
-  try { reason = (await res.json()).error.errors[0].reason; } catch { /* no details */ }
-  throw new Error(friendlyError(res.status, reason));
-}
-
-function normalize(v) {
-  const sn = v.snippet;
-  const thumbs = sn.thumbnails || {};
-  return {
-    id: v.id,
-    title: sn.title,
-    channel: sn.channelTitle,
-    published: sn.publishedAt,
-    thumb: (thumbs.medium || thumbs.high || thumbs.default || {}).url || "",
-    views: v.statistics && v.statistics.viewCount != null ? Number(v.statistics.viewCount) : null,
-    duration: fmtDuration(v.contentDetails && v.contentDetails.duration),
-  };
-}
-
-// Looks up details for video IDs (1 quota unit per call, up to 50 IDs).
-// onlyPlayable keeps only public videos that allow embedding.
-async function getVideos(ids, onlyPlayable = true) {
-  const out = [];
-  for (let i = 0; i < ids.length; i += 50) {
-    const data = await api("videos", {
-      part: "snippet,statistics,contentDetails,status",
-      id: ids.slice(i, i + 50).join(","),
-      maxResults: 50,
-    });
-    for (const v of data.items || []) {
-      const playable = v.status && v.status.embeddable && v.status.privacyStatus === "public";
-      if (onlyPlayable && !playable) continue;
-      const video = normalize(v);
-      videoCache.set(video.id, video);
-      out.push(video);
-    }
+const ITEMS = new Map(); // id -> { id, type, cats:Set, title, channel, thumb, published, hidden }
+for (const [cat, links] of Object.entries(LINKS)) {
+  for (const link of links) {
+    const p = parseLink(link);
+    if (!p) { console.warn("Bhakti Dhara: could not read this link:", link); continue; }
+    const item = ITEMS.get(p.id) || { ...p, cats: new Set(), title: "", channel: "", thumb: "", hidden: false };
+    item.cats.add(cat);
+    ITEMS.set(p.id, item);
   }
-  return out.sort((a, b) => ids.indexOf(a.id) - ids.indexOf(b.id));
 }
+const manualItems = [...ITEMS.values()];
+
+function fmtAgo(iso) {
+  const s = (Date.now() - new Date(iso).getTime()) / 1000;
+  if (!iso || isNaN(s)) return "";
+  const units = [["year", 31536000], ["month", 2592000], ["week", 604800], ["day", 86400], ["hour", 3600], ["minute", 60]];
+  for (const [name, secs] of units) {
+    if (s >= secs) { const n = Math.floor(s / secs); return `${n} ${name}${n > 1 ? "s" : ""} ago`; }
+  }
+  return "just now";
+}
+
+// videos.json is written by the GitHub Action (see update_videos.py). Newest first.
+async function loadVideosJson() {
+  try {
+    const res = await fetch("videos.json", { cache: "no-cache" });
+    if (!res.ok) return;
+    const data = await res.json();
+    for (const v of data.videos || []) {
+      if (!v.id || ITEMS.has(v.id)) continue;
+      ITEMS.set(v.id, {
+        id: v.id, type: "video", cats: new Set(v.cats || []),
+        title: v.title || "", channel: v.channel || "", thumb: "",
+        published: v.published || "", hidden: false,
+      });
+    }
+  } catch { /* no videos.json yet: only your own LINKS are shown */ }
+}
+
+const ytUrl = (it) => it.type === "playlist"
+  ? `https://www.youtube.com/playlist?list=${it.id}`
+  : `https://www.youtube.com/watch?v=${it.id}`;
+const thumbOf = (it) => it.thumb || (it.type === "video" ? `https://i.ytimg.com/vi/${it.id}/hqdefault.jpg` : "");
+const titleOf = (it) => it.title || (it.type === "playlist" ? "YouTube playlist" : "YouTube video");
+
+// YouTube's public oEmbed gives title + channel without any key.
+// 401/404 means the video can't be embedded or no longer exists, so we hide it.
+async function loadMeta(it) {
+  try {
+    const res = await fetch(`https://www.youtube.com/oembed?format=json&url=${encodeURIComponent(ytUrl(it))}`);
+    if (res.status === 401 || res.status === 404) { it.hidden = true; return; }
+    if (!res.ok) return;
+    const d = await res.json();
+    it.title = d.title || "";
+    it.channel = d.author_name || "";
+    if (it.type === "playlist" && d.thumbnail_url) it.thumb = d.thumbnail_url;
+  } catch { /* offline or blocked: we still show the card with a basic title */ }
+}
+const metaReady = Promise.allSettled([loadVideosJson(), ...manualItems.map(loadMeta)]);
 
 /* ============ 4. FEED ============ */
-const state = {
-  view: "home",       // "home" | "saved" | "recent"
-  category: "all",
-  query: "",
-  nextToken: null,
-  done: false,        // no more pages
-  loading: false,     // blocks overlapping requests
-  failed: false,      // last request failed (stops auto-retry loops)
-  rid: 0,             // bumped on every reset so late responses are ignored
-  seen: new Set(),    // video IDs already shown (de-duplication)
-};
-
+const state = { view: "home", category: "all", query: "" };
 const grid = $("#grid");
 const statusEl = $("#status");
+const feedTitle = $("#feedTitle");
+let renderId = 0;
+const PAGE = 24;           // cards added per step
+let list = [], shown = 0;  // current filtered list and how many are on screen
 const loadMoreBtn = $("#loadMore");
 const sentinel = $("#sentinel");
-const feedTitle = $("#feedTitle");
 
 const currentCategory = () => CATEGORIES.find((c) => c.id === state.category);
-
-function buildQuery() {
-  const cat = currentCategory();
-  if (!state.query) return cat.q;
-  return state.category === "all" ? state.query : `${state.query} ${cat.q}`;
-}
 
 function updateTitle() {
   const cat = currentCategory();
@@ -189,135 +179,89 @@ function updateTitle() {
     : cat.label;
 }
 
-function showMissingKey() {
-  setStatus(statusEl, "Add your YouTube API key to start",
-    "Open script.js, replace PASTE_YOUR_API_KEY_HERE with your key, and reload. The README explains how to get one.");
-}
-
-function resetFeed() {
-  state.rid++;
-  state.nextToken = null;
-  state.done = false;
-  state.loading = false;
-  state.failed = false;
-  state.seen.clear();
-  grid.replaceChildren();
-  clearStatus(statusEl);
-  loadMoreBtn.hidden = true;
-}
-
-function card(v) {
-  const link = `#watch=${v.id}`;
+function card(it) {
+  const link = `#watch=${it.id}`;
   return h("article", { class: "card" },
-    h("a", { class: "thumb", href: link, "aria-label": `Play: ${v.title}` },
-      h("img", { src: v.thumb, alt: "", loading: "lazy" }),
-      v.duration ? h("span", { class: "dur" }, v.duration) : null),
+    h("a", { class: "thumb", href: link, "aria-label": `Play: ${titleOf(it)}` },
+      thumbOf(it) ? h("img", { src: thumbOf(it), alt: "", loading: "lazy" }) : null,
+      it.type === "playlist" ? h("span", { class: "dur" }, "Playlist") : null),
     h("div", { class: "info" },
-      h("a", { class: "title", href: link }, v.title),
-      h("p", { class: "ch" }, v.channel),
-      h("p", { class: "sub" }, [fmtViews(v.views), fmtAgo(v.published)].filter(Boolean).join(" • "))));
+      h("a", { class: "title", href: link }, titleOf(it)),
+      it.channel ? h("p", { class: "ch" }, it.channel) : null,
+      it.published ? h("p", { class: "sub" }, fmtAgo(it.published)) : null));
 }
 
-async function loadPage() {
-  if (state.view !== "home" || state.loading || state.done) return;
-  if (!hasKey()) { showMissingKey(); return; }
+function youtubeSearchButton() {
+  return h("a", {
+    class: "btn", target: "_blank", rel: "noopener noreferrer",
+    href: `https://www.youtube.com/results?search_query=${encodeURIComponent(state.query)}`,
+  }, "Search on YouTube");
+}
 
-  const rid = state.rid;
-  state.loading = true;
-  state.failed = false;
-  clearStatus(statusEl);
-  loadMoreBtn.hidden = true;
+function visibleItems() {
+  const words = state.query.toLowerCase().split(/\s+/).filter(Boolean);
+  return [...ITEMS.values()]
+    .filter((it) => !it.hidden)
+    .filter((it) => state.category === "all" || it.cats.has(state.category))
+    .filter((it) => {
+      const text = `${it.title} ${it.channel}`.toLowerCase();
+      return words.every((w) => text.includes(w));
+    });
+}
+
+async function renderFeed() {
+  const my = ++renderId;
+  grid.replaceChildren(); clearStatus(statusEl);
+  list = []; shown = 0; loadMoreBtn.hidden = true;
   addSkeletons(grid, 6);
-
-  let added = 0, tries = 0;
-  try {
-    // If a whole page is filtered out (not embeddable etc.), try the next page.
-    while (added === 0 && !state.done && tries < 3) {
-      tries++;
-      const params = {
-        part: "snippet", type: "video", videoEmbeddable: "true", safeSearch: "strict",
-        maxResults: CONFIG.PAGE_SIZE, q: buildQuery(),
-      };
-      if (state.nextToken) params.pageToken = state.nextToken;
-
-      const data = await api("search", params);
-      if (rid !== state.rid) return;
-      state.nextToken = data.nextPageToken || null;
-      if (!state.nextToken) state.done = true;
-
-      const ids = [...new Set((data.items || []).map((i) => i.id && i.id.videoId).filter((id) => id && !state.seen.has(id)))];
-      const videos = ids.length ? await getVideos(ids) : [];
-      if (rid !== state.rid) return;
-
-      const frag = document.createDocumentFragment();
-      for (const v of videos) {
-        if (state.seen.has(v.id)) continue;
-        state.seen.add(v.id);
-        frag.append(card(v));
-        added++;
-      }
-      grid.insertBefore(frag, grid.querySelector(".skeleton"));
-    }
-  } catch (err) {
-    if (rid === state.rid) {
-      state.failed = true;
-      setStatus(statusEl, "Couldn't load videos", err.message,
-        h("button", { class: "btn", onclick: loadPage }, "Try again"));
-    }
-  } finally {
-    if (rid === state.rid) {
-      state.loading = false;
-      removeSkeletons(grid);
-      afterLoad();
-    }
+  await metaReady;
+  if (my !== renderId) return;
+  grid.replaceChildren();
+  list = visibleItems();
+  if (!ITEMS.size) {
+    setStatus(statusEl, "No videos yet", "Add channels in channels.txt (or links in script.js) and run the update.");
+  } else if (list.length) {
+    appendMore();
+    if (state.query) setStatus(statusEl, "Looking for something else?", "Search all of YouTube for this keyword.", youtubeSearchButton());
+  } else if (state.query) {
+    setStatus(statusEl, "No matching videos", "Nothing in this site's list matches your search. You can search on YouTube instead.", youtubeSearchButton());
+  } else {
+    setStatus(statusEl, "No videos in this category yet", "Add a channel for it in channels.txt, or links in script.js.");
   }
 }
 
-function afterLoad() {
-  if (state.failed) { loadMoreBtn.hidden = true; return; }
-  if (!grid.children.length && state.done) {
-    setStatus(statusEl, "No videos found", "Try a different keyword or another category.");
-    loadMoreBtn.hidden = true;
-    return;
-  }
-  loadMoreBtn.hidden = state.done;
-  // If the page is still short on screen, fetch more.
-  if (!state.done) requestAnimationFrame(() => {
-    if (!state.failed && sentinel.getBoundingClientRect().top < window.innerHeight + 300) loadPage();
+function appendMore() {
+  if (state.view !== "home" || shown >= list.length) return;
+  grid.append(...list.slice(shown, shown + PAGE).map(card));
+  shown += PAGE;
+  loadMoreBtn.hidden = shown >= list.length;
+  // still room on screen? keep going
+  requestAnimationFrame(() => {
+    if (shown < list.length && sentinel.getBoundingClientRect().top < window.innerHeight + 300) appendMore();
   });
 }
+loadMoreBtn.addEventListener("click", appendMore);
+// Infinite scroll over the already-loaded list (no extra network requests).
+new IntersectionObserver((entries) => { if (entries[0].isIntersecting) appendMore(); }, { rootMargin: "400px" }).observe(sentinel);
 
-// Infinite scroll: load the next page when the bottom is close.
-new IntersectionObserver((entries) => {
-  if (entries[0].isIntersecting && !state.failed) loadPage();
-}, { rootMargin: "300px" }).observe(sentinel);
-loadMoreBtn.addEventListener("click", loadPage);
-
-async function showLocalList(kind) {
-  state.rid++;
-  state.done = true; state.loading = false; state.failed = false;
-  grid.replaceChildren(); clearStatus(statusEl); loadMoreBtn.hidden = true;
+async function renderLocal(kind) {
+  const my = ++renderId;
+  list = []; shown = 0; loadMoreBtn.hidden = true;
+  grid.replaceChildren(); clearStatus(statusEl);
   feedTitle.textContent = kind === "saved" ? "Watchlist" : "Recently watched";
-
   const ids = store.get(KEYS[kind], []);
   if (!ids.length) {
     setStatus(statusEl, "Nothing here yet",
       kind === "saved" ? "Open a video and tap “Save to watchlist”." : "Videos you watch will appear here.");
     return;
   }
-  if (!hasKey()) { showMissingKey(); return; }
-
-  const rid = state.rid;
   addSkeletons(grid, Math.min(ids.length, 6));
-  try {
-    const videos = await getVideos(ids);
-    if (rid !== state.rid) return;
-    removeSkeletons(grid);
-    if (videos.length) grid.append(...videos.map(card));
-    else setStatus(statusEl, "These videos are no longer available", "They may have been removed or made private.");
-  } catch (err) {
-    if (rid === state.rid) { removeSkeletons(grid); setStatus(statusEl, "Couldn't load your list", err.message); }
-  }
+  await metaReady;
+  if (my !== renderId) return;
+  grid.replaceChildren();
+  const items = ids.map((id) => ITEMS.get(id)).filter((it) => it && !it.hidden);
+  if (items.length) grid.append(...items.map(card));
+  else setStatus(statusEl, "These videos are no longer in the list", "They may have been removed from the site.");
 }
 
 function showView(view) {
@@ -325,8 +269,7 @@ function showView(view) {
   state.view = view;
   document.querySelectorAll(".nav-item").forEach((b) => b.classList.toggle("active", b.dataset.view === view));
   $("#chips").hidden = view !== "home";
-  if (view === "home") { updateTitle(); resetFeed(); loadPage(); }
-  else showLocalList(view);
+  if (view === "home") { updateTitle(); renderFeed(); } else renderLocal(view);
   closeDrawer();
 }
 
@@ -362,7 +305,8 @@ function loadYT() {
 }
 
 function showPlayerMsg(title, text) {
-  const link = h("a", { class: "btn", href: `https://www.youtube.com/watch?v=${currentId}`, target: "_blank", rel: "noopener noreferrer" }, "Watch on YouTube");
+  const it = ITEMS.get(currentId);
+  const link = it ? h("a", { class: "btn", href: ytUrl(it), target: "_blank", rel: "noopener noreferrer" }, "Watch on YouTube") : null;
   setStatus($("#playerMsg"), title, text, link);
 }
 
@@ -375,18 +319,26 @@ function onPlayerError(e) {
     showPlayerMsg("Playback problem", "YouTube couldn't play this video. Try watching it on YouTube.");
 }
 
-async function startPlayer(id) {
+function playNow(it) {
+  if (it.type === "playlist") player.loadPlaylist({ listType: "playlist", list: it.id });
+  else player.loadVideoById(it.id);
+}
+
+async function startPlayer(it) {
   await loadYT();
-  if (player && typeof player.loadVideoById === "function") { player.loadVideoById(id); return; }
-  if (player) return; // still initialising; onReady below picks up currentId
-  player = new YT.Player("player", {
-    videoId: id,
-    playerVars: { autoplay: 1, playsinline: 1, rel: 0 },
+  if (player && typeof player.loadVideoById === "function") { playNow(it); return; }
+  if (player) return; // still starting; onReady below plays currentId
+  const playerVars = { autoplay: 1, playsinline: 1, rel: 0 };
+  const config = {
+    playerVars,
     events: {
-      onReady: () => { if (currentId !== id) player.loadVideoById(currentId); },
+      onReady: () => { const now = ITEMS.get(currentId); if (now && now.id !== it.id) playNow(now); },
       onError: onPlayerError,
     },
-  });
+  };
+  if (it.type === "playlist") { playerVars.listType = "playlist"; playerVars.list = it.id; }
+  else config.videoId = it.id;
+  player = new YT.Player("player", config);
 }
 
 function renderSaveButton() {
@@ -395,30 +347,42 @@ function renderSaveButton() {
 }
 
 async function openWatch(id) {
+  const it = ITEMS.get(id);
+  if (!it) {
+    history.replaceState(null, "", location.pathname + location.search);
+    toast("That video isn't in this site's list.");
+    return;
+  }
   if (!watchView.hidden && currentId === id) return;
   if (watchView.hidden) feedScroll = window.scrollY;
   currentId = id;
   feedView.hidden = true; watchView.hidden = false;
   window.scrollTo(0, 0);
   clearStatus($("#playerMsg"));
-  $("#ytLink").href = `https://www.youtube.com/watch?v=${id}`;
-  $("#watchTitle").textContent = "";
+  $("#ytLink").href = ytUrl(it);
+  $("#watchTitle").textContent = titleOf(it);
   $("#watchMeta").textContent = "";
-  $("#relatedGrid").replaceChildren();
-  clearStatus($("#relatedStatus"));
   renderSaveButton();
   addRecent(id);
-  startPlayer(id);
+  startPlayer(it);
 
-  let v = videoCache.get(id);
-  if (!v && hasKey()) {
-    try { [v] = await getVideos([id], false); } catch { /* details are optional */ }
-  }
+  await metaReady;
   if (currentId !== id) return;
-  $("#watchTitle").textContent = v ? v.title : "YouTube video";
-  $("#watchMeta").textContent = v ? [v.channel, fmtViews(v.views), fmtAgo(v.published)].filter(Boolean).join(" • ") : "";
-  document.title = v ? `${v.title} – Bhakti Dhara` : "Bhakti Dhara";
-  loadRelated(v);
+  $("#watchTitle").textContent = titleOf(it);
+  $("#watchMeta").textContent = [it.channel, it.type === "playlist" ? "Playlist" : ""].filter(Boolean).join(" • ");
+  document.title = `${titleOf(it)} – Bhakti Dhara`;
+  renderRelated(it);
+}
+
+function renderRelated(it) {
+  const box = $("#relatedGrid"), st = $("#relatedStatus");
+  box.replaceChildren(); clearStatus(st);
+  // Related = other videos from the same categories on this site.
+  const related = [...ITEMS.values()]
+    .filter((x) => x.id !== it.id && !x.hidden && [...x.cats].some((c) => c !== "all" && it.cats.has(c)))
+    .slice(0, 8);
+  if (related.length) box.append(...related.map(card));
+  else setStatus(st, "No related videos yet", "More videos will show here as they are added to this category.");
 }
 
 function closeWatch() {
@@ -430,7 +394,6 @@ function closeWatch() {
   window.scrollTo(0, feedScroll);
 }
 
-// Used by nav buttons / search / logo: leave the watch page without keeping its history entry.
 function leaveWatch() {
   if (watchView.hidden) return;
   feedScroll = 0;
@@ -438,28 +401,9 @@ function leaveWatch() {
   closeWatch();
 }
 
-async function loadRelated(v) {
-  const box = $("#relatedGrid"), st = $("#relatedStatus");
-  if (!v || !hasKey()) return;
-  const id = v.id;
-  addSkeletons(box, 4);
-  try {
-    // "relatedToVideoId" was retired by YouTube, so we search using the title's words.
-    const q = v.title.replace(/[^\p{L}\p{N}\s]/gu, " ").split(/\s+/).filter(Boolean).slice(0, 8).join(" ");
-    const data = await api("search", { part: "snippet", type: "video", videoEmbeddable: "true", safeSearch: "strict", maxResults: 10, q });
-    const ids = [...new Set((data.items || []).map((i) => i.id && i.id.videoId).filter((x) => x && x !== id))];
-    const vids = ids.length ? (await getVideos(ids)).slice(0, 8) : [];
-    if (currentId !== id) return;
-    removeSkeletons(box);
-    if (vids.length) box.append(...vids.map(card)); else setStatus(st, "No related videos found", "");
-  } catch (err) {
-    if (currentId === id) { removeSkeletons(box); setStatus(st, "Couldn't load related videos", err.message); }
-  }
-}
-
 function route() {
-  const m = /^#watch=([\w-]{11})$/.exec(location.hash);
-  if (m) { if (!watchView.hidden) stepsIn++; else stepsIn = 1; openWatch(m[1]); }
+  const m = /^#watch=([\w-]{6,40})$/.exec(location.hash);
+  if (m) { stepsIn = watchView.hidden ? 1 : stepsIn + 1; openWatch(m[1]); }
   else closeWatch();
 }
 window.addEventListener("hashchange", route);
@@ -476,12 +420,12 @@ $("#saveBtn").addEventListener("click", () => {
 });
 
 $("#shareBtn").addEventListener("click", async () => {
-  const url = location.href; // link back to this video on Bhakti Dhara
+  const url = location.href;
   const title = $("#watchTitle").textContent || "Bhakti Dhara";
   try {
     if (navigator.share) await navigator.share({ title, url });
     else { await navigator.clipboard.writeText(url); toast("Link copied"); }
-  } catch { /* user closed the share sheet */ }
+  } catch { /* share sheet closed */ }
 });
 
 /* ============ 6. LOCAL DATA (this browser only) ============ */
@@ -499,7 +443,7 @@ $("#clearBtn").addEventListener("click", () => {
   if (!confirm("Clear your watchlist and watch history from this browser?")) return;
   store.remove(KEYS.saved); store.remove(KEYS.recent);
   toast("Saved data cleared");
-  if (state.view !== "home") showLocalList(state.view);
+  if (state.view !== "home") renderLocal(state.view);
   if (currentId) renderSaveButton();
 });
 
@@ -538,7 +482,7 @@ $("#brand").addEventListener("click", (e) => {
 });
 
 $("#searchForm").addEventListener("submit", (e) => {
-  e.preventDefault(); // handles both the Enter key and the Search button
+  e.preventDefault();
   state.query = $("#searchInput").value.trim();
   showView("home");
   window.scrollTo(0, 0);
@@ -546,5 +490,5 @@ $("#searchForm").addEventListener("submit", (e) => {
 
 // Start
 renderChips();
-if (/^#watch=/.test(location.hash)) { updateTitle(); route(); }
+if (/^#watch=/.test(location.hash)) { updateTitle(); renderFeed(); route(); }
 else { showView("home"); }
