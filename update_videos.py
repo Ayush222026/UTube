@@ -20,13 +20,15 @@ import xml.etree.ElementTree as ET
 CHANNELS_FILE = "channels.txt"
 OUT_FILE = "videos.json"
 UA = "Mozilla/5.0 (compatible; BhaktiDharaUpdater/1.0)"
+BROWSER_UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+              "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36")
 CATEGORIES = {"all", "bhajans", "hindu", "gita", "epics", "hanuman", "mahadev",
               "krishna", "yoga", "spiritual-edu", "edu", "podcast"}
 NS = {"a": "http://www.w3.org/2005/Atom", "yt": "http://www.youtube.com/xml/schemas/2015"}
 
 
-def fetch(url, extra_headers=None):
-    headers = {"User-Agent": UA, "Accept-Language": "en", "Cookie": "CONSENT=YES+1"}
+def fetch(url, extra_headers=None, ua=UA):
+    headers = {"User-Agent": ua, "Accept-Language": "en-US,en;q=0.9", "Cookie": "CONSENT=YES+1; SOCS=CAI"}
     headers.update(extra_headers or {})
     req = urllib.request.Request(url, headers=headers)
     with urllib.request.urlopen(req, timeout=30) as resp:
@@ -49,22 +51,45 @@ def read_channels():
                 print(f"channels.txt line {n}: unknown category '{cat}' (skipped)")
                 continue
             url = url.split("?")[0].rstrip("/")  # drop ?si=... tracking part
+            if url.startswith("@"):
+                url = "https://www.youtube.com/" + url
             out.append((cat, url))
     return out
 
 
-def resolve_channel_id(url):
-    m = re.search(r"/channel/(UC[\w-]{22})", url)
-    if m:
-        return m.group(1)
-    html = fetch(url)
+def find_channel_id(html):
     for pattern in (r'rel="canonical" href="https://www\.youtube\.com/channel/(UC[\w-]{22})"',
                     r'itemprop="channelId" content="(UC[\w-]{22})"',
-                    r'"externalId":"(UC[\w-]{22})"'):
+                    r'"externalId":"(UC[\w-]{22})"',
+                    r'"channelId":"(UC[\w-]{22})"'):
         m = re.search(pattern, html)
         if m:
             return m.group(1)
-    raise ValueError("channel ID not found")
+    return None
+
+
+def resolve_channel_id(url):
+    """Accepts a channel ID (UC...), a /channel/UC... link, or an @handle link."""
+    m = re.search(r"(?:^|/channel/)(UC[\w-]{22})$", url)
+    if m:
+        return m.group(1)
+    # YouTube sometimes refuses automated requests, so try a few ways to open the page.
+    candidates = [(url, BROWSER_UA), (url + "/videos", BROWSER_UA),
+                  (url.replace("www.youtube.com", "m.youtube.com"), BROWSER_UA), (url, UA)]
+    tried = []
+    for page, ua in candidates:
+        try:
+            found = find_channel_id(fetch(page, ua=ua))
+            if found:
+                return found
+            tried.append("no ID on page")
+        except urllib.error.HTTPError as err:
+            tried.append(f"HTTP {err.code}")
+        except Exception as err:
+            tried.append(type(err).__name__)
+        time.sleep(0.5)
+    raise ValueError("channel ID not found (" + ", ".join(tried) + "). "
+                     "Put the channel ID (UC...) in channels.txt instead of the link.")
 
 
 def parse_feed(xml_text):
