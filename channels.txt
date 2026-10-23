@@ -1,0 +1,8 @@
+# Bhakti Dhara – channel list.
+# One channel per line:   category | channel link
+# Categories (write exactly): all, bhajans, hindu, gita, epics, hanuman, mahadev,
+#                             krishna, yoga, spiritual-edu, edu, podcast
+# Lines starting with # are ignored. The same channel can be listed under 2 categories.
+
+podcast | https://www.youtube.com/@rajshamani
+podcast | https://www.youtube.com/@shubhankarmishraofficial
